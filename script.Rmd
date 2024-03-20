@@ -124,6 +124,12 @@ df <- df[which(grepl("[[:alnum:]]", df$review)), ] #Remove rows without any char
 write.csv(df, "cleaned-trip.csv")
 ```
 
-```{r}
+```{r stemming}
+# Remove punctuation
+df$review <- removePunctuation(df$review)
 
+# Stem reviews
+df$review <- wordStem(df$review)
+
+write.csv(df, "fully-cleaned-trip.csv")
 ```
