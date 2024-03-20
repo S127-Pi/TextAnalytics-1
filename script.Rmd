@@ -1,0 +1,129 @@
+---
+title: "scrape"
+output: pdf_document
+date: "2024-02-15"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r lib, echo=FALSE, warning=FALSE, message=FALSE}
+library(rvest)
+library(dplyr)
+library(tidyverse)
+library(polite)
+library(httr)
+library(tm)
+library(lexicon)
+library(tidytext)
+library(SnowballC)
+library(wordcloud)
+```
+
+```{r init, message=FALSE}
+df <- data.frame(review = character(), rating = character(), stringsAsFactors = FALSE)
+```
+
+
+```{r scraping}
+scrape = FALSE # Set TRUE for scraping 
+
+if (scrape){
+  for (page_result in seq(from=1, to = 2410, by = 10)){
+  url <- paste0("https://uk.trustpilot.com/review/trip.com?page=",page_result)
+  tryCatch(
+    {
+      page <- GET(url, add_headers('user-agent' = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko)        Chrome/116.0.0.0 Safari/537.36'))
+    },
+    error = function(e){
+      print(paste("Error:", e$message))
+      print(paste("Time-out on page:", page_result))
+    }
+  )
+  
+  page <- read_html(url)
+  review <- page %>% 
+  html_nodes(".styles_reviewContent__0Q2Tg") %>%
+  html_text()
+
+  
+  rating <- page %>%
+  html_nodes(".styles_reviewHeader__iU9Px") %>%
+  html_attr("data-service-review-rating")
+  
+  df <- rbind(df, data.frame(review, rating, stringsAsFactors = FALSE))
+  
+  print(paste("Page:", page_result))
+  Sys.sleep(0.1)
+}
+df$rating <- as.factor(df$rating)  
+}
+
+```
+
+```{r csv}
+#write.csv(df, "trip.csv")
+```
+
+```{r preprocessing}
+df <- read.csv("trip.csv")
+
+remove_date_of_experience <- function(text) {
+  # Remove 'date of experience' 
+  pattern <- "date of experience:.+"
+  cleaned_text <- gsub(pattern, "", text)
+  
+  return(cleaned_text)
+}
+
+
+remove_emoticons <- function(text) {
+  # Define regex pattern to match emoticons
+  pattern <- "[\\x{1F600}-\\x{1F64F}\\x{1F300}-\\x{1F5FF}\\x{1F680}-\\x{1F6FF}\\x{2600}-\\x{26FF}\\x{2700}-\\x{27BF}]"
+  
+  # Replace the matched emoticons with an empty string
+  cleaned_text <- gsub(pattern, "", text, perl = TRUE)
+  
+  return(cleaned_text)
+}
+
+
+remove_non_alphanumeric <- function(text) {
+  # Remove non-alphanumeric characters
+  pattern <- "[^[:alnum:][:punct:][:space:]]"
+  cleaned_text <- gsub(pattern, "", text)
+  
+  return(cleaned_text)
+}
+
+df <- df[c('review','rating')]
+
+# Cleaning data
+df$review <- df$review %>% 
+  tolower() %>%
+  gsub(":( |-|o)*\\("," SADSMILE ", .) %>%
+  gsub(":( |-|o)*\\)"," HAPPYSMILE ", .) %>%
+  remove_date_of_experience() %>% 
+  remove_emoticons() %>% 
+  gsub("([0-9]+:)*[0-9]+ *am"," TIME_AM", .) %>%  # Find time AM
+  gsub("([0-9]+:)*[0-9]+ *pm"," TIME_PM", .) %>%  # Find time PM
+  gsub("-"," ", .) %>%                            # Remove all -
+  gsub("\"+"," ", .) %>%                          # Remove all "
+  gsub("\\|+"," ", .) %>%                         # Remove all |
+  gsub("_+"," ", .) %>%                           # Remove all _
+  gsub(";+"," ", .) %>%                           # Remove excess ;
+  gsub(" +"," ", .) %>%                           # Remove excess spaces
+  gsub("\\.+","\\.", .) %>%                       # Remove excess .
+  gsub("[^\x01-\x7F]+","",.) %>%                  # Filter out non-english character
+  remove_non_alphanumeric()
+
+#df <- df[which(!grepl("[^\x01-\x7F]+", df$review)),] #filter out non-english character
+df <- df[which(grepl("[[:alnum:]]", df$review)), ] #Remove rows without any character
+
+write.csv(df, "cleaned-trip.csv")
+```
+
+```{r}
+
+```
