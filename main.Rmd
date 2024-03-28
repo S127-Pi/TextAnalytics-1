@@ -23,6 +23,8 @@ df <- df[, isPositive, Review]
 ```
 
 ```{r data_cleaning, include = FALSE}
+df$id <- seq_len(nrow(df))
+
 # Lowercase the reviews
 df$Review <- char_tolower(df$Review)
 
