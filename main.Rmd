@@ -31,10 +31,10 @@ fwrite(df, "data/complete_reviews.csv")
 
 # Convert smileys and times to text 
 df$Review <- df$Review %>%
-  gsub(":( |-|o)*\\("," SADSMILE ", .) %>%
-  gsub(":( |-|o)*\\)"," HAPPYSMILE ", .) %>%
-  gsub("([0-9]+:)*[0-9]+ *am"," TIME AM", .) %>%  # Find time AM
-  gsub("([0-9]+:)*[0-9]+ *pm"," TIME PM", .)  # Find time PM
+  gsub(":( |-|o)*\\("," sadsmile ", .) %>%
+  gsub(":( |-|o)*\\)"," happysmile ", .) %>%
+  gsub("([0-9]+:)*[0-9]+ *am"," timeam", .) %>%  # Find time AM
+  gsub("([0-9]+:)*[0-9]+ *pm"," timepm", .)  # Find time PM
 
 # Remove punctuation
 df$Review <- removePunctuation(df$Review)
