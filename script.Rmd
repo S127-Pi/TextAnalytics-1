@@ -19,6 +19,7 @@ library(lexicon)
 library(tidytext)
 library(SnowballC)
 library(wordcloud)
+library(stats)
 ```
 
 ```{r init, message=FALSE}
@@ -132,4 +133,9 @@ df$review <- removePunctuation(df$review)
 df$review <- wordStem(df$review)
 
 write.csv(df, "fully-cleaned-trip.csv")
+```
+
+```{r pca}
+pca_results <- prcomp()
+
 ```

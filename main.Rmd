@@ -1,0 +1,70 @@
+---
+title: "Amazon Reviews"
+author: "Kevin Kraayeveld (589908)"
+date: "2024-03-28"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(data.table)
+library(quanteda)
+library(tm)
+library(dplyr)
+library(SnowballC)
+library(tidytext)
+library(text2vec)
+```
+
+```{r data_reading, include = FALSE}
+df <- fread("data/AmazonReviews.csv")
+df <- df[, isPositive, Review]
+```
+
+```{r data_cleaning, include = FALSE}
+# Lowercase the reviews
+df$Review <- char_tolower(df$Review)
+
+# First dataset
+fwrite(df, "data/complete_reviews.csv")
+
+# Convert smileys and times to text 
+df$Review <- df$Review %>%
+  gsub(":( |-|o)*\\("," SADSMILE ", .) %>%
+  gsub(":( |-|o)*\\)"," HAPPYSMILE ", .) %>%
+  gsub("([0-9]+:)*[0-9]+ *am"," TIME AM", .) %>%  # Find time AM
+  gsub("([0-9]+:)*[0-9]+ *pm"," TIME PM", .)  # Find time PM
+
+# Remove punctuation
+df$Review <- removePunctuation(df$Review)
+# Remove numbers
+df$Review <- removeNumbers(df$Review)
+# Tokenize reviews
+df$Review <- tokens(df$Review)
+# Remove stop words
+data("stop_words")
+df$Review <- tokens_select(df$Review, stop_words$word, selection = "remove")
+# Stem words
+df$Review <- lapply(df$Review, function(token) wordStem(token))
+
+# Create vocabulary
+vocabulary <- create_vocabulary(itoken(df$Review))
+# Only keep words that are in at least 0.5% of the reviews
+pruned_vocabulary <- prune_vocabulary(vocabulary, doc_proportion_min = 0.005)
+
+# Delete words that are not in the pruned vocabulary
+words_to_delete <- setdiff(vocabulary$term, pruned_vocabulary$term)
+df$Review <- tokens_select(as.tokens(df$Review), words_to_delete, selection = "remove")
+df$Review <- as.list(df$Review)
+
+# Turn the review back into a text instead of token
+df$Review <- lapply(df$Review, function(token) {
+  paste(token, collapse = " ")
+})
+
+# Remove empty reviews
+df <- df[Review != ""]
+
+fwrite(df, "data/fully_cleaned_reviews.csv")
+```
