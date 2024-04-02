@@ -5,6 +5,7 @@ library(dplyr)
 library(SnowballC)
 library(tidytext)
 library(text2vec)
+library(factoextra)
 
 df <- fread("data/fully_cleaned_reviews.csv")
 
@@ -80,3 +81,4 @@ fviz_pca_var(pca_results, axes=axeslist
              gradient.cols = c("#00AFBB", "#E7B800", "#FC4E07"), # colors to use
              repel = TRUE     # Avoid text overlapping
 )
+
