@@ -29,7 +29,9 @@ df$id <- seq_len(nrow(df))
 df$Review <- char_tolower(df$Review)
 
 # First dataset
-fwrite(df, "data/complete_reviews.csv")
+if (!file.exists("data/complete_reviews.csv")) {
+  fwrite(df, "data/complete_reviews.csv")
+}
 
 # Convert smileys and times to text 
 df$Review <- df$Review %>%
@@ -68,5 +70,8 @@ df$Review <- lapply(df$Review, function(token) {
 # Remove empty reviews
 df <- df[Review != ""]
 
-fwrite(df, "data/fully_cleaned_reviews.csv")
+# Cleaned data set
+if (!file.exists("data/fully_cleaned_reviews.csv")) {
+  fwrite(df, "data/fully_cleaned_reviews.csv")
+}
 ```
