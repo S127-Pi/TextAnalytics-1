@@ -1,0 +1,106 @@
+---
+title: "MDS"
+author: "Pi Molling (607367)"
+date: "`r Sys.Date()`"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r library, warning=FALSE, message=FALSE}
+if (!require("factoextra")) install.packages("factoextra")
+
+#library(dplyr)
+library(data.table)
+library(ggplot2)
+library(tokenizers)
+library(tibble)
+library(tidyverse)
+library(tidytext)
+library(SnowballC)
+library(tm)
+library(stringi)
+library(ggrepel)
+library("wordcloud")
+library("quanteda")
+
+if (!require("smacof")) install.packages("smacof")
+if (!require("ggfortify")) install.packages("ggfortify")
+if (!require("ggthemes")) install.packages("ggthemes")
+```
+
+```{r import_data}
+df <- fread("data/fully_cleaned_reviews.csv")
+```
+
+```{r mds_step_1} 
+tokenized_reviews <- tokens(corpus(df, docid_field = "id", text_field = "Review"))
+co_occurrence_matrix <- fcm(x = tokenized_reviews, context = "document", count = "frequency", tri=FALSE)
+
+# Create a matrix with number of documents with each word on the diagonal
+reviews_dfm <- dfm(tokenized_reviews) # get document frequency matrix
+counts <- colSums(as.matrix(reviews_dfm)) 
+co_occurrence_matrix <- as.matrix(co_occurrence_matrix)
+diag(co_occurrence_matrix) <- counts
+```
+
+Create a subset of 200 most occuring words
+
+```{r mds_step_2}
+sortedcount <- counts%>% sort(decreasing=TRUE)
+sortednames <- names(sortedcount)
+nwords<-200
+subset_words<-as.matrix(sortedcount[1:nwords])
+```
+
+```{r}
+# Create co-occurrence matrix showing first 15 rows and columns
+co_occurrence_matrix <- co_occurrence_matrix[sortednames[1:nwords],sortednames[1:nwords]]
+co_occurrence_matrix[1:7,1:7]
+```
+
+```{r mds_step_3}
+# Convert similarities to distances
+distances <- sim2diss(co_occurrence_matrix, method = "cooccurrence") 
+distances[1:20,1:7]
+```
+```{r mds_map}
+# Run the routine that finds the best matching coordinates in a 2D mp given the distances
+MDS_map <- smacofSym(distances) # Transform similarity values to distances
+# Plot words in a map based on the distances
+ggplot(as.data.frame(MDS_map$conf), aes(D1, D2, label = rownames(MDS_map$conf))) +
+     geom_text(check_overlap = TRUE) + theme_minimal(base_size = 15) + xlab('') + ylab('') +
+     scale_y_continuous(breaks = NULL) + scale_x_continuous(breaks = NULL)
+# the conf element in the MDS output contains the coordinates with as names D1 and D2.
+
+```
+
+
+```{r window_size_mds}
+# window = 5
+
+# Create feature co-occurrence matrix 
+# Window defines how far words can be apart: Count how often they are at most 5 words apart
+co_occurrence_matrix <- fcm(x = tokenized_reviews, context = "window", window=5, count = "boolean", tri=FALSE)
+
+co_occurrence_matrix<-co_occurrence_matrix[sortednames[1:nwords],sortednames[1:nwords]]
+
+# Create diagonal (how often does the word occur)
+diag(co_occurrence_matrix) <- counts[sortednames[1:nwords]]
+co_occurrence_matrix[1:15,1:7]
+```
+
+```{r mds_map_window_size_5}
+# Transform similarities to distances.
+distances <- sim2diss(co_occurrence_matrix, method = "cooccurrence") 
+
+# Run the routine that finds the best matching coordinates in a 2D mp given the distances
+MDS_map <- smacofSym(distances) # Multidimensional scaling on a symmetric dissimilarity matrix
+# Plot words in a map based on the distances
+ggplot(as.data.frame(MDS_map$conf), aes(D1, D2, label = rownames(MDS_map$conf))) +
+     geom_text(check_overlap = TRUE) + theme_minimal(base_size = 15) + xlab('') + ylab('') +
+     scale_y_continuous(breaks = NULL) + scale_x_continuous(breaks = NULL)
+# the conf element in the MDS output contains the coordinatis with as names D1 and D2.
+```
