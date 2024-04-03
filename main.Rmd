@@ -28,8 +28,11 @@ df$id <- seq_len(nrow(df))
 # Lowercase the reviews
 df$Review <- char_tolower(df$Review)
 
-# Remove multiple periods
+# Remove multiple punctuations
 df[, Review := gsub("\\.+", ".", Review)]
+df[, Review := gsub("\\!+", "!", Review)]
+df[, Review := gsub("\\?+", "?", Review)]
+df[, Review := gsub("\\|+", "|", Review)]
 
 # First dataset
 if (!file.exists("data/complete_reviews.csv")) {
