@@ -11,10 +11,12 @@ knitr::opts_chunk$set(echo = TRUE)
 library(data.table)
 library(quanteda)
 library(tm)
+library(textmineR)
 library(dplyr)
 library(SnowballC)
 library(tidytext)
 library(text2vec)
+library(ggplot2)
 ```
 
 ```{r}
@@ -105,7 +107,7 @@ res[which.max(res$ll_validation),]
 
 ```{r}
 alpha = .1
-n_topics = 5
+n_topics = 15
 lda_results <- FitLdaModel(dtm = dtm_train,
                        k = n_topics, # number of topics
                        burnin = 200 + 10*n_topics,
@@ -143,7 +145,7 @@ SummarizeTopics(lda_results)
 # Get top 10 words with probabilities for visualization
 phi <- lda_results$phi
 top_term_table <- NULL
-n_topics = 5
+n_topics = 15
 for (j in 1:n_topics) {
   words <- t(phi[j,]) %>% order(decreasing=TRUE) %>% head(10) %>% phi[j,.]
   top_term_table <- rbind(top_term_table, data.frame(topic=j,probability=words , term = labels(words)) )
