@@ -1,0 +1,477 @@
+---
+title: "Amazon Reviews"
+author: "Kevin Kraayeveld, Thomas Groenewegen, Scottie Lee, Pi Molling"
+date: "2024-03-28"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(data.table)
+library(quanteda)
+library(tm)
+library(dplyr)
+library(SnowballC)
+library(tidytext)
+library(text2vec)
+library(factoextra)
+library(ggplot2)
+library(tokenizers)
+library(tibble)
+library(tidyverse)
+library(stringi)
+library(ggrepel)
+library(wordcloud)
+library(syuzhet)
+library(sentimentr)
+library(qdap)
+library(caret)
+library(textmineR)
+```
+
+```{r data_reading, include = FALSE}
+df <- fread("data/AmazonReviews.csv")
+df <- df[, isPositive, Review]
+```
+
+```{r data_cleaning, include = FALSE}
+df$id <- seq_len(nrow(df))
+
+# Lowercase the reviews
+df$Review <- char_tolower(df$Review)
+
+# Remove multiple punctuations
+df[, Review := gsub("\\.+", ".", Review)]
+df[, Review := gsub("\\!+", "!", Review)]
+df[, Review := gsub("\\?+", "?", Review)]
+df[, Review := gsub("\\|+", "|", Review)]
+
+# First dataset
+if (!file.exists("data/complete_reviews.csv")) {
+  fwrite(df, "data/complete_reviews.csv")
+}
+
+# Convert smileys and times to text 
+df$Review <- df$Review %>%
+  gsub(":( |-|o)*\\("," sadsmile ", .) %>%
+  gsub(":( |-|o)*\\)"," happysmile ", .) %>%
+  gsub("([0-9]+:)*[0-9]+ *am"," timeam", .) %>%  # Find time AM
+  gsub("([0-9]+:)*[0-9]+ *pm"," timepm", .)  # Find time PM
+
+# Remove punctuation
+df$Review <- removePunctuation(df$Review)
+# Remove numbers
+df$Review <- removeNumbers(df$Review)
+# Tokenize reviews
+df$Review <- tokens(df$Review)
+# Remove stop words
+data("stop_words")
+df$Review <- tokens_select(df$Review, stop_words$word, selection = "remove")
+# Stem words
+df$Review <- lapply(df$Review, function(token) wordStem(token))
+
+# Create vocabulary
+vocabulary <- create_vocabulary(itoken(df$Review))
+# Only keep words that are in at least 0.5% of the reviews
+pruned_vocabulary <- prune_vocabulary(vocabulary, doc_proportion_min = 0.005)
+
+# Delete words that are not in the pruned vocabulary
+words_to_delete <- setdiff(vocabulary$term, pruned_vocabulary$term)
+df$Review <- tokens_select(as.tokens(df$Review), words_to_delete, selection = "remove")
+df$Review <- as.list(df$Review)
+
+# Turn the review back into a text instead of token
+df$Review <- lapply(df$Review, function(token) {
+  paste(token, collapse = " ")
+})
+
+# Remove empty reviews
+df <- df[Review != ""]
+
+# Cleaned data set
+if (!file.exists("data/fully_cleaned_reviews.csv")) {
+  fwrite(df, "data/fully_cleaned_reviews.csv")
+}
+```
+
+```{r PCA}
+df <- fread("data/fully_cleaned_reviews.csv")
+
+corpus <- Corpus(VectorSource(df$Review))
+
+tdm <- TermDocumentMatrix(corpus)
+tdm_matrix <- as.matrix(tdm)
+
+counts <- rowSums(tdm_matrix) 
+sortedcount <- counts%>% sort(decreasing=TRUE)
+nwords<-200
+sortednames <- names(sortedcount[1:nwords])
+
+dtm_matrix <- t(tdm_matrix)
+
+pca_results <- prcomp(dtm_matrix, 
+                      scale = FALSE, # Scale is false because all data is on the same scale so we don't have to rescale
+                      rank. = 40) # Rank specifies maximum number of principal components
+
+pca_results_backup <- pca_results 
+
+fviz_screeplot(pca_results,ncp=40)
+
+ncomp <- 4
+
+j<-1 # For first dimension
+toplist <- abs(pca_results$rotation[,j]) %>% sort(decreasing=TRUE) %>% head(10)
+topwords <- (names(toplist)) # Save most important words
+for (j in 2:ncomp){
+  toplist <- abs(pca_results$rotation[,j]) %>% sort(decreasing=TRUE) %>% head(10)
+  topwords <-cbind( topwords , (names(toplist))) # Add most important words of the dimension
+}
+
+# Graph variables of PCA: Colors indicate amount of variation explained by the dimensions
+#axeslist <- c(1, 2)
+#fviz_pca_var(pca_results, axes=axeslist 
+#             ,geom.var = c("arrow", "text")
+#             ,col.var = "contrib", # Color by contributions to the PC
+#             gradient.cols = c("#00AFBB", "#E7B800", "#FC4E07"), # colors to use
+#             repel = TRUE     # Avoid text overlapping
+#)
+
+
+# Get factor loadings (relatedness) and do rotation to new coordinate system
+rawLoadings     <- pca_results$rotation[sortednames,1:ncomp] %*% diag(pca_results$sdev, ncomp, ncomp)
+rotated <- varimax(rawLoadings) # rotate loading matrix
+pca_results$rotation <- rotated$loadings 
+pca_results$x <- scale(pca_results$x[,1:ncomp]) %*% rotated$rotmat
+
+# Select the most important words per rotated dimension
+j<-1 # For first dimension
+toplist <- abs(pca_results$rotation[,j]) %>% sort(decreasing=TRUE) %>% head(10)
+topwords <- (names(toplist)) # Save most important words
+for (j in 2:ncomp){
+  toplist <- abs(pca_results$rotation[,j]) %>% sort(decreasing=TRUE) %>% head(10)
+  topwords <-cbind( topwords , (names(toplist))) # Add most important words of the dimension
+}
+
+# Display
+topwords
+
+# Use smaller dataset: Keep only 200 reviews to plot
+pca_results_backup <- pca_results 
+pca_results_small <- pca_results
+pca_results_small$x <- pca_results_small$x[1:200,] 
+pca_results <- pca_results_small
+
+# Plot PCA results after rotation - variables
+axeslist <- c(1, 2)
+fviz_pca_var(pca_results, axes=axeslist 
+             ,geom.var = c("arrow", "text")
+             ,col.var = "contrib", # Color by contributions to the PC
+             gradient.cols = c("#00AFBB", "#E7B800", "#FC4E07"), # colors to use
+             repel = TRUE     # Avoid text overlapping
+)
+```
+
+```{r import_data}
+df <- fread("data/fully_cleaned_reviews.csv")
+```
+
+```{r mds_step_1} 
+tokenized_reviews <- tokens(corpus(df, docid_field = "id", text_field = "Review"))
+co_occurrence_matrix <- fcm(x = tokenized_reviews, context = "document", count = "frequency", tri=FALSE)
+
+# Create a matrix with number of documents with each word on the diagonal
+reviews_dfm <- dfm(tokenized_reviews) # get document frequency matrix
+counts <- colSums(as.matrix(reviews_dfm)) 
+co_occurrence_matrix <- as.matrix(co_occurrence_matrix)
+diag(co_occurrence_matrix) <- counts
+```
+
+Create a subset of 200 most occuring words
+
+```{r mds_step_2}
+sortedcount <- counts%>% sort(decreasing=TRUE)
+sortednames <- names(sortedcount)
+nwords<-200
+subset_words<-as.matrix(sortedcount[1:nwords])
+```
+
+```{r}
+# Create co-occurrence matrix showing first 15 rows and columns
+co_occurrence_matrix <- co_occurrence_matrix[sortednames[1:nwords],sortednames[1:nwords]]
+co_occurrence_matrix[1:7,1:7]
+```
+
+```{r mds_step_3}
+# Convert similarities to distances
+distances <- sim2diss(co_occurrence_matrix, method = "cooccurrence") 
+distances[1:20,1:7]
+```
+
+```{r mds_map}
+# Run the routine that finds the best matching coordinates in a 2D mp given the distances
+MDS_map <- smacofSym(distances) # Transform similarity values to distances
+# Plot words in a map based on the distances
+ggplot(as.data.frame(MDS_map$conf), aes(D1, D2, label = rownames(MDS_map$conf))) +
+     geom_text(check_overlap = TRUE) + theme_minimal(base_size = 15) + xlab('') + ylab('') +
+     scale_y_continuous(breaks = NULL) + scale_x_continuous(breaks = NULL)
+# the conf element in the MDS output contains the coordinates with as names D1 and D2.
+
+```
+
+
+```{r window_size_mds}
+# window = 5
+
+# Create feature co-occurrence matrix 
+# Window defines how far words can be apart: Count how often they are at most 5 words apart
+co_occurrence_matrix <- fcm(x = tokenized_reviews, context = "window", window=5, count = "boolean", tri=FALSE)
+
+co_occurrence_matrix<-co_occurrence_matrix[sortednames[1:nwords],sortednames[1:nwords]]
+
+# Create diagonal (how often does the word occur)
+diag(co_occurrence_matrix) <- counts[sortednames[1:nwords]]
+co_occurrence_matrix[1:15,1:7]
+```
+
+```{r mds_map_window_size_5}
+# Transform similarities to distances.
+distances <- sim2diss(co_occurrence_matrix, method = "cooccurrence") 
+
+# Run the routine that finds the best matching coordinates in a 2D mp given the distances
+MDS_map <- smacofSym(distances) # Multidimensional scaling on a symmetric dissimilarity matrix
+# Plot words in a map based on the distances
+ggplot(as.data.frame(MDS_map$conf), aes(D1, D2, label = rownames(MDS_map$conf))) +
+     geom_text(check_overlap = TRUE) + theme_minimal(base_size = 15) + xlab('') + ylab('') +
+     scale_y_continuous(breaks = NULL) + scale_x_continuous(breaks = NULL)
+# the conf element in the MDS output contains the coordinatis with as names D1 and D2.
+```
+
+```{r sentiment}
+# Loading in the complete reviews
+complete_reviews <- read.csv("data/complete_reviews.csv")
+
+
+### Perform a sentiment analysis on the reviews
+
+# Get the sentiment of each review using the polarity function
+complete_reviews$sentiment <- sentiment_by(sentimentr::get_sentences(complete_reviews[,"Review"]))$ave_sentiment
+
+# Plot the results, showing the distribution of the sentiment scores for positive and negative reviews
+ggplot(complete_reviews, aes(x = sentiment, fill = factor(isPositive, labels = c("Negative", "Positive")))) +
+  geom_density(alpha = 0.5) +
+  labs(fill = "Rating")
+
+# Additionally: see how accurately it predicts positive and negative reviews (if sentiment is positive, review is positive, and vice versa)
+confusionMatrix(factor(complete_reviews$isPositive), 
+                factor(complete_reviews$sentiment >= 0))
+
+
+### Make adjustments to the settings 
+
+# Get the sentiment, with a amplifier weight and adversative weight set to zero
+complete_reviews$sentiment_changes <- sentiment_by(sentimentr::get_sentences(complete_reviews[,"Review"]), 
+                                                   amplifier.weight = 0, 
+                                                   adversative.weight = 0,
+                                                   )$ave_sentiment
+
+# Plot the sentiment for positive and negative reviews with the adjusted sentiment
+ggplot(complete_reviews, aes(x = sentiment_changes, fill = factor(isPositive, labels = c("Negative","Positive")))) +
+  geom_density(alpha = 0.5) +
+  labs(x = "sentiment", fill = "Rating")
+
+# Again, additionally: see the accuracy of the sentiment analysis
+confusionMatrix(factor(complete_reviews$isPositive), 
+                factor(complete_reviews$sentiment_changes >= 0))
+
+
+# Average sentiment no changes polarity
+median(complete_reviews$sentiment)
+median(complete_reviews$sentiment[complete_reviews$isPositive == TRUE])
+median(complete_reviews$sentiment[complete_reviews$isPositive == FALSE])
+
+# Percentage of people that have a positive sentiment, but a negative review
+sum(complete_reviews$sentiment[complete_reviews$isPositive == FALSE] > 0)/sum(complete_reviews$isPositive == FALSE)
+
+# Average sentiment, amplifier to 0
+median(complete_reviews$sentiment_changes)
+median(complete_reviews$sentiment_changes[complete_reviews$isPositive == TRUE])
+median(complete_reviews$sentiment_changes[complete_reviews$isPositive == FALSE])
+
+
+
+### Extra
+
+# Get the sentiment, with a amplifier weight to zero, and adversative weight to -1
+complete_reviews$sentiment_changes2 <- sentiment_by(sentimentr::get_sentences(complete_reviews[,"Review"]), 
+                                                    amplifier.weight = 1, 
+                                                    adversative.weight = -1,
+)$ave_sentiment
+
+# Plot the sentiment for positive and negative reviews with the adjusted sentiment
+ggplot(complete_reviews, aes(x = sentiment_changes2, fill = isPositive)) +
+  geom_density(alpha = 0.5)
+
+# Average sentiment, amplifier to 0, adversative to -1
+median(complete_reviews$sentiment_changes2)
+median(complete_reviews$sentiment_changes2[complete_reviews$isPositive == TRUE])
+median(complete_reviews$sentiment_changes2[complete_reviews$isPositive == FALSE])
+```
+
+```{r}
+df <- read.csv("data/fully_cleaned_reviews.csv")
+
+dtm <- CreateDtm(doc_vec = df[, "Review"], # character vector of documents
+                 doc_names = df[, "id"])
+
+set.seed(4321)
+n_topics=10; # Number of different topics
+lda_results <- FitLdaModel(dtm = dtm,
+                        k = n_topics, # number of topic
+                        burnin = 200 + 10*n_topics,
+                        iterations = 700 + 10*n_topics,
+                         #alpha: prior on topic probabilities - beta: prior on word probabilities
+                        alpha = 0.1,beta = 0.05,
+                        optimize_alpha = T,
+                        calc_likelihood = T,
+                        calc_coherence = T)
+```
+
+```{r}
+n <- nrow(dtm)
+train <- sample(1:n, round(n * 0.80))
+dtm_train <- dtm[train,]
+dtm_val <- dtm[-train,]
+
+res <- NULL
+TMlist <- list()  # list to collect results
+n_topics <- 10
+
+for (n_topics in seq(5, 25, 5)) # Do for number of topics 10, 20, 30, 40, 50 
+  {
+    print(n_topics)
+  
+    lda_results <- FitLdaModel(dtm = dtm_train,
+                         k = n_topics, # number of topic
+                         burnin = 200 + 10*n_topics,
+                         iterations = 700 + 10*n_topics,
+                         alpha = 0.1,beta = 0.05,
+                         optimize_alpha = T,
+                         calc_likelihood = T,
+                         calc_coherence = T) 
+
+    # calculates word co-occurrence for moving window (M=5) and contrasts with topic structure
+    coh_train <- mean(CalcProbCoherence(phi = lda_results$phi, dtm = dtm_train, M = 5) )
+    coh_val <- mean(CalcProbCoherence(phi = lda_results$phi, dtm = dtm_val, M = 5) )
+
+    # Calculate the log likelihood of the DTM for training set
+    ll_train <- CalcLikelihood(dtm = dtm_train, 
+                     phi = lda_results$phi, 
+                     theta = lda_results$theta)/nrow(dtm_train)
+    # Determine theta for validation set
+    lda_results$theta_val <- predict(lda_results, dtm_val, method = "gibbs", iterations = 700 + 10*n_topics, burnin = 200 + 10*n_topics)
+
+    # Calculate the log likelihood of the DTM for validation set
+    ll_val <- CalcLikelihood(dtm = dtm_val, 
+                     phi = lda_results$phi, 
+                     theta = lda_results$theta_val)/nrow(dtm_val)
+
+    # Combine all values in matrix per row
+    res <- rbind(res, data.frame(n_topics=n_topics, ll_train = ll_train, ll_validation = ll_val, coh_train=coh_train, coh_val=coh_val))
+
+    # Add current LDA result
+    TMlist <- append(TMlist, c(lda_results))
+  
+    print(res)
+  }
+```
+
+```{r}
+# Make plot showing the coherence for different numbers of topics
+ggplot(res, aes(n_topics)) +                    
+  geom_line(aes(y=coh_train, colour="Train")) + # show coherence training set
+  geom_line(aes(y=coh_val, colour="Validation")) # show coherence validation set
+
+# Print results with best coherence
+res[which.max(res$coh_val),]
+
+ggplot(res, aes(n_topics)) +                    
+  geom_line(aes(y=ll_train, colour="Train")) + # show perplexity training set
+  geom_line(aes(y=ll_validation, colour="Validation")) + # show perplexity validation set
+  labs(colour="Sample")
+
+# Print results with best perplexity on validation sample (based on likelihood which is easier to read)
+res[which.max(res$ll_validation),]
+```
+
+```{r}
+alpha = .1
+n_topics = 15
+lda_results <- FitLdaModel(dtm = dtm_train,
+                       k = n_topics, # number of topics
+                       burnin = 200 + 10*n_topics,
+                       iterations = 700 + 10*n_topics,
+                       alpha = alpha, beta = 0.05,
+                       optimize_alpha = T,
+                       calc_likelihood = T,
+                       calc_coherence = T)
+
+model <- lda_results
+# Get the prevalence of each topic
+# You can make this discrete by applying a threshold, say 0.05, for
+# topics in/out of docuemnts. 
+model$prevalence <- colSums(model$theta) / sum(model$theta) * 100
+plot(model$prevalence, model$alpha, xlab = "% topic prevalence", ylab = "alpha")
+```
+
+```{r}
+maxProb <- apply(lda_results$theta, 1, max)
+hist(maxProb, main="Maximum topic probability", xlab="Maximum topic probability")
+```
+
+```{r look at term probabilities per topic}
+# Get the top M terms of each topic
+model$top_terms <- GetTopTerms(phi = model$phi, M = 10)
+
+model$top_terms
+```
+
+```{r}
+SummarizeTopics(lda_results)
+```
+
+```{r}
+# Get top 10 words with probabilities for visualization
+phi <- lda_results$phi
+top_term_table <- NULL
+n_topics = 15
+for (j in 1:n_topics) {
+  words <- t(phi[j,]) %>% order(decreasing=TRUE) %>% head(10) %>% phi[j,.]
+  top_term_table <- rbind(top_term_table, data.frame(topic=j,probability=words , term = labels(words)) )
+}
+
+```
+
+```{r graphically show most likely terms}
+# Create a table of top 10 words grouped by topic
+text_top_terms <- top_term_table %>%
+  group_by(topic) %>%
+  top_n(10, probability) %>%
+  ungroup() %>%
+  arrange(topic, -probability)
+
+  # Create plots of top 10 words for each topic
+  perplot <- 6
+  for (i in 1:ceiling(n_topics/perplot))
+  {
+    p <- text_top_terms %>%
+      filter(topic > (i-1)*perplot & topic<=(i*perplot)) %>% # filter out topic
+      mutate(term = reorder_within(term, probability, topic)) %>% # show highest probability up top
+      ggplot(aes(term, probability, fill = factor(topic))) + # bar plot layout 
+      geom_col(show.legend = FALSE) +
+      facet_wrap(~ topic, scales = "free") +
+      coord_flip()+
+      scale_x_reordered()
+    show(p)
+  }
+```
