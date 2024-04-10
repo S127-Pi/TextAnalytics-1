@@ -57,7 +57,7 @@ df$Review <- lapply(df$Review, function(token) wordStem(token))
 # Create vocabulary
 vocabulary <- create_vocabulary(itoken(df$Review))
 # Only keep words that are in at least 0.5% of the reviews
-pruned_vocabulary <- prune_vocabulary(vocabulary, doc_proportion_min = 0.005)
+pruned_vocabulary <- prune_vocabulary(vocabulary, doc_proportion_min = 0.001)
 
 # Delete words that are not in the pruned vocabulary
 words_to_delete <- setdiff(vocabulary$term, pruned_vocabulary$term)
@@ -110,3 +110,8 @@ word_embeddings <- glove_model$components
 model <- t(as.matrix(word_embeddings))
 ```
 
+```{r part1}
+
+
+
+```
