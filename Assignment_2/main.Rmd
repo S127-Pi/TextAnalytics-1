@@ -1,0 +1,14 @@
+---
+title: "Assignment 2"
+author: "Kevin Kraayeveld (589908)"
+date: "2024-04-10"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r read_data, echo=FALSE}
+
+```
