@@ -15,6 +15,7 @@ library(dplyr)
 library(SnowballC)
 library(tidytext)
 library(text2vec)
+library(parallel)
 ```
 
 ```{r data_reading, include = FALSE}
@@ -63,6 +64,8 @@ words_to_delete <- setdiff(vocabulary$term, pruned_vocabulary$term)
 df$Review <- tokens_select(as.tokens(df$Review), words_to_delete, selection = "remove")
 df$Review <- as.list(df$Review)
 
+df$Review_Tokens <- df$Review
+
 # Turn the review back into a text instead of token
 df$Review <- lapply(df$Review, function(token) {
   paste(token, collapse = " ")
@@ -75,4 +78,32 @@ df <- df[Review != ""]
 if (!file.exists("../data/fully_cleaned_reviews.csv")) {
   fwrite(df, "../data/fully_cleaned_reviews.csv")
 }
+
+```
+
+```{r glove, echo = FALSE}
+iter <- itoken(df$Review_Tokens)
+vectorizer <- vocab_vectorizer(pruned_vocabulary)
+tcm <- create_tcm(it = iter, 
+                  vectorizer = vectorizer,
+                  skip_grams_window = 5L)
+
+glove_model <- GloVe$new(rank = 50, # Dimensionality of the vector
+                         x_max = 100, # maximum number of co-occurrences to use in the weighting function
+                         learning_rate = 0.2, # learning rate for SGD
+                         alpha = 0.75, # the alpha in weighting function formula
+                         lambda = 0, # regularization parameter
+                         shuffle = FALSE)
+
+# Set the number of threads
+num_cores <- detectCores()
+options(mc.cores = num_cores)
+                  
+print("Train GloVe model")
+glove_model$fit_transform(x = tcm, # Co-occurence matrix
+                          n_iter = 200, # number of SGD iterations
+                          convergence_tol = -1) # defines early stopping strategy
+
+word_embeddings <- glove_model$components
+model <- t(as.matrix(word_embeddings))
 ```
