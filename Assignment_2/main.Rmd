@@ -82,6 +82,8 @@ if (!file.exists("../data/fully_cleaned_reviews.csv")) {
 ```
 
 ```{r glove, echo = FALSE}
+set.seed(100)
+
 iter <- itoken(df$Review_Tokens)
 vectorizer <- vocab_vectorizer(pruned_vocabulary)
 tcm <- create_tcm(it = iter, 
@@ -107,3 +109,4 @@ glove_model$fit_transform(x = tcm, # Co-occurence matrix
 word_embeddings <- glove_model$components
 model <- t(as.matrix(word_embeddings))
 ```
+
