@@ -16,6 +16,7 @@ library(SnowballC)
 library(tidytext)
 library(text2vec)
 library(parallel)
+library(lsa)
 ```
 
 ```{r data_reading, include = FALSE}
@@ -103,29 +104,16 @@ options(mc.cores = num_cores)
                   
 print("Train GloVe model")
 glove_model$fit_transform(x = tcm, # Co-occurence matrix
-                          n_iter = 200, # number of SGD iterations
+                          n_iter = 50, # number of SGD iterations
                           convergence_tol = -1) # defines early stopping strategy
 
 word_embeddings <- glove_model$components
 model <- t(as.matrix(word_embeddings))
-write.csv(word_embeddings, file = 'output.csv')
 ```
 
 ```{r part1}
-library(lsa) # For cosine similarity calculation
-library(data.table) # For efficient data handling
-
-# Load the dataset
-data <- fread("output.csv") # Adjust the path to your actual file
-
-# Remove the first column if it's just an index
-data <- data[,-1,with=FALSE]
-
-# Transpose the data to align with the cosine function expectations
-data_t <- data
-
 # Calculate the cosine similarity matrix for the entire set of words
-similarity_matrix <- cosine(as.matrix(data_t))
+similarity_matrix <- sim2(model)
 
 # To avoid considering self-similarity, replace diagonal with NA
 diag(similarity_matrix) <- NA
@@ -137,15 +125,25 @@ max_sim <- max(similarity_matrix, na.rm = TRUE)
 max_pos <- which(similarity_matrix == max_sim, arr.ind = TRUE)
 
 # Extract the words (columns) corresponding to the highest similarity
-word1 <- colnames(data_t)[max_pos[1, 1]]
-word2 <- colnames(data_t)[max_pos[1, 2]]
+word1 <- colnames(model)[max_pos[1, 1]]
+word2 <- colnames(model)[max_pos[1, 2]]
 
 # Output the result
 cat("The most similar pair is:", word1, "and", word2, "with a similarity score of", max_sim, "\n")
 
 ```
 
-```{r}
 
+```{r}
+get_top_similar_words <- function(word, top_n = 10) {
+  row_index <- which(rownames(similarity_matrix) == word)
+  similarities <- similarity_matrix[row_index, ]
+  sorted_indices <- order(similarities, decreasing = TRUE) 
+  top_indices <- sorted_indices[1:min(length(sorted_indices), top_n)]
+  top_words <- rownames(similarity_matrix)[top_indices]
+  return(top_words)
+}
+
+get_top_similar_words("film")
 ```
 
