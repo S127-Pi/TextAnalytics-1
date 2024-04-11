@@ -49,11 +49,18 @@ df$Review <- removePunctuation(df$Review)
 df$Review <- removeNumbers(df$Review)
 # Tokenize reviews
 df$Review <- tokens(df$Review)
-# Remove stop words
+# Get stop words
 data("stop_words")
+# Remove a few stop words
+ignore_list <- stop_words %>% filter(!word %in% c("no", "not", "never"))
+df$Review_bigram <- tokens_select(df$Review, ignore_list$word, selection = "remove")
 df$Review <- tokens_select(df$Review, stop_words$word, selection = "remove")
 # Stem words
 df$Review <- lapply(df$Review, function(token) wordStem(token))
+df$Review_bigram <- lapply(df$Review_bigram, function(token) wordStem(token))
+
+df$Review <- tokens_select(as.tokens(df$Review), c("no", "never", "not"), selection = "remove")
+df$Review <- as.list(df$Review)
 
 # Create vocabulary
 vocabulary <- create_vocabulary(itoken(df$Review))
@@ -63,12 +70,18 @@ pruned_vocabulary <- prune_vocabulary(vocabulary, doc_proportion_min = 0.005)
 # Delete words that are not in the pruned vocabulary
 words_to_delete <- setdiff(vocabulary$term, pruned_vocabulary$term)
 df$Review <- tokens_select(as.tokens(df$Review), words_to_delete, selection = "remove")
+df$Review_bigram <- tokens_select(as.tokens(df$Review_bigram), words_to_delete, selection = "remove")
 df$Review <- as.list(df$Review)
+df$Review_bigram <- as.list(df$Review_bigram)
 
 df$Review_Tokens <- df$Review
 
 # Turn the review back into a text instead of token
 df$Review <- lapply(df$Review, function(token) {
+  paste(token, collapse = " ")
+})
+
+df$Review_bigram <- lapply(df$Review_bigram, function(token) {
   paste(token, collapse = " ")
 })
 
@@ -135,7 +148,7 @@ cat("The most similar pair is:", word1, "and", word2, "with a similarity score o
 
 
 ```{r 1.1}
-get_top_similar_words <- function(word, top_n = 10) {
+get_top_similar_words <- function(word, similarity_matrix, top_n = 10) {
   row_index <- which(rownames(similarity_matrix) == word)
   similarities <- similarity_matrix[row_index, ]
   sorted_indices <- order(similarities, decreasing = TRUE) 
@@ -171,4 +184,33 @@ ranking <- order(similarities, decreasing = TRUE)
 data.frame(similarities[ranking[1:20]], row.names = pruned_vocabulary$term[ranking[1:20]])
 
 ```
+```{r similar_reviews}
+vector_averaging <- function(token, model){
+  embeddings <- model[unlist(token),]
+  if(is.null(dim(embeddings)[1])){
+    vector <- embeddings
+  } else{
+    vector <- colMeans(embeddings)
+  }
+  return(vector)
+}
 
+df[, Review_Vector := lapply(df$Review_Tokens, function(tokens){
+  vector_averaging(tokens, model)
+})]
+
+review_matrix <- do.call(rbind, df$Review_Vector)
+
+# Calculate the cosine similarity matrix for the entire set of words
+similarity_matrix_reviews <- sim2(review_matrix)
+
+# To avoid considering self-similarity, replace diagonal with NA
+diag(similarity_matrix_reviews) <- NA
+
+rownames(similarity_matrix_reviews) <- rownames(df)
+
+get_top_similar_words(100, similarity_matrix_reviews)
+
+df$Review[100]
+df$Review[681]
+```
