@@ -57,7 +57,7 @@ df$Review <- lapply(df$Review, function(token) wordStem(token))
 # Create vocabulary
 vocabulary <- create_vocabulary(itoken(df$Review))
 # Only keep words that are in at least 0.5% of the reviews
-pruned_vocabulary <- prune_vocabulary(vocabulary, doc_proportion_min = 0.001)
+pruned_vocabulary <- prune_vocabulary(vocabulary, doc_proportion_min = 0.005)
 
 # Delete words that are not in the pruned vocabulary
 words_to_delete <- setdiff(vocabulary$term, pruned_vocabulary$term)
@@ -108,10 +108,44 @@ glove_model$fit_transform(x = tcm, # Co-occurence matrix
 
 word_embeddings <- glove_model$components
 model <- t(as.matrix(word_embeddings))
+write.csv(word_embeddings, file = 'output.csv')
 ```
 
 ```{r part1}
+library(lsa) # For cosine similarity calculation
+library(data.table) # For efficient data handling
 
+# Load the dataset
+data <- fread("output.csv") # Adjust the path to your actual file
 
+# Remove the first column if it's just an index
+data <- data[,-1,with=FALSE]
+
+# Transpose the data to align with the cosine function expectations
+data_t <- data
+
+# Calculate the cosine similarity matrix for the entire set of words
+similarity_matrix <- cosine(as.matrix(data_t))
+
+# To avoid considering self-similarity, replace diagonal with NA
+diag(similarity_matrix) <- NA
+
+# Find the highest value in the similarity matrix, ignoring NAs
+max_sim <- max(similarity_matrix, na.rm = TRUE)
+
+# Find the position of the highest similarity value
+max_pos <- which(similarity_matrix == max_sim, arr.ind = TRUE)
+
+# Extract the words (columns) corresponding to the highest similarity
+word1 <- colnames(data_t)[max_pos[1, 1]]
+word2 <- colnames(data_t)[max_pos[1, 2]]
+
+# Output the result
+cat("The most similar pair is:", word1, "and", word2, "with a similarity score of", max_sim, "\n")
 
 ```
+
+```{r}
+
+```
+
