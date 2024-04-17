@@ -17,10 +17,11 @@ library(tidytext)
 library(text2vec)
 library(parallel)
 library(lsa)
+library(sentimentr)
 ```
 
 ```{r data_reading, include = FALSE}
-df <- fread("../data/AmazonReviews.csv")
+df <- fread("AmazonReviews.csv")
 df <- df[, isPositive, Review]
 ```
 
@@ -29,6 +30,9 @@ df$id <- seq_len(nrow(df))
 
 # Lowercase the reviews
 df$Review <- char_tolower(df$Review)
+
+# Add additional column for sentiment
+df$Review_uncleaned <- df$Review
 
 # Remove multiple punctuations
 df[, Review := gsub("\\.+", ".", Review)]
@@ -148,7 +152,7 @@ cat("The most similar pair is:", word1, "and", word2, "with a similarity score o
 
 
 ```{r 1.1}
-get_most_similar <- function(word, similarity_matrix, top_n = 10) {
+get_top_similar_words <- function(word, similarity_matrix, top_n = 10) {
   row_index <- which(rownames(similarity_matrix) == word)
   similarities <- similarity_matrix[row_index, ]
   sorted_indices <- order(similarities, decreasing = TRUE) 
@@ -157,9 +161,9 @@ get_most_similar <- function(word, similarity_matrix, top_n = 10) {
   return(top_words)
 }
 
-get_most_similar("film", similarity_matrix)
-get_most_similar("artist", similarity_matrix)
-get_most_similar("book", similarity_matrix)
+get_top_similar_words("film", similarity_matrix)
+get_top_similar_words("artist", similarity_matrix)
+get_top_similar_words("book", similarity_matrix)
 ```
 
 ```{r 1.2}
@@ -184,6 +188,7 @@ ranking <- order(similarities, decreasing = TRUE)
 data.frame(similarities[ranking[1:20]], row.names = pruned_vocabulary$term[ranking[1:20]])
 
 ```
+
 ```{r similar_reviews}
 vector_averaging <- function(token, model){
   embeddings <- model[unlist(token),]
@@ -209,13 +214,117 @@ diag(similarity_matrix_reviews) <- NA
 
 rownames(similarity_matrix_reviews) <- rownames(df)
 
-get_most_similar(100, similarity_matrix_reviews)
+get_top_similar_words(100, similarity_matrix_reviews)
 
 df$Review[100]
 df$Review[681]
 ```
 
+
 ```{r 2.1}
-df <- df %>% unnest_tokens(bigram, Review_bigram, token = "ngrams", n = 2)
+# Unigram of words
+sel_unigram <- df %>% 
+  unnest_tokens(unigram, Review, token = "words") %>%
+  count(unigram, sort = TRUE) %>%
+  slice(1:50)
+
+
+unigram_dtm <- df %>% unnest_tokens(unigram, Review, token = "words")  %>%
+  count(id, unigram, sort = TRUE) %>% 
+  filter(unigram %in% sel_unigram$unigram) %>%
+  arrange(id) %>% 
+  cast_dtm(id, unigram, n)
+
+unigram_dtm <- as.matrix(unigram_dtm)
+```
+
+```{r 2.1}
+# Bigrams of words
+sel_bigram <- df %>% 
+  unnest_tokens(bigram, Review_bigram, token = "ngrams", n = 2 ) %>%
+  count(bigram, sort = TRUE) %>%
+  filter( n >= 100)
+
+
+bigram_dtm <- df %>% unnest_tokens(bigram, Review_bigram, token = "ngrams", n = 2 )  %>%
+  count(id, bigram, sort = TRUE) %>% 
+  filter(bigram %in% sel_bigram$bigram) %>%
+  arrange(id) %>% 
+  cast_dtm(id, bigram, n)
+
+bigram_dtm <- as.matrix(bigram_dtm)
+```
+
+
+```{r 2.1}
+prediction_df <- df[,c("id", "isPositive", "Review_Vector")]
+
+# Sentiment score for each review
+prediction_df$sentiment_score <- sentiment_by(sentimentr::get_sentences(df$Review_uncleaned))$ave_sentiment
+
+# Joining bigrams and unigrams into the data frame
+prediction_df <- cbind(prediction_df, bigram_dtm[match(prediction_df$id, rownames(bigram_dtm)),])
+prediction_df <- cbind(prediction_df, unigram_dtm[match(prediction_df$id, rownames(unigram_dtm)),])
+prediction_df[is.na(prediction_df)] <- 0
+
+# Separate the vector embeddings into columns
+prediction_df[,paste0("V", 1:50) := transpose(Review_Vector)]
+prediction_df[,Review_Vector := NULL]
+```
+
+
+```{r 2.1}
+# Spliiting into testing and training
+set.seed(100)
+train_id <- sample(1:nrow(prediction_df), nrow(prediction_df)*0.8)
+df_train <- prediction_df[train_id]
+df_test <- prediction_df[-train_id]
+
+x_train <- df_train[,-c("isPositive","id")]
+x_test <- df_test[,-c("isPositive","id")]
+
+y_train <- df_train$isPositive
+y_test <- df_test$isPositive
+```
+
+
+```{r 2.1}
+# Running a logistic regression
+logi_1 <- glm(y_train ~., data = x_train, family = "binomial")
+
+df_test$pred_logi <- ifelse(predict(logi_1 ,df_test, type = "response") > 0.5, 1,0)
+
+
+
+confusion_matrix <- table(df_test$isPositive, df_test$pred_logi)
+
+TN <- confusion_matrix[[1]]
+TP <- confusion_matrix[, 2][[2]]
+FP <- confusion_matrix[[2]]
+FN <- confusion_matrix[, 2][[1]]
+
+print(confusion_matrix)
+
+# Calculate measures
+accuracy <- (TP + TN) / (TP + TN + FP + FN)
+precision <- TP / (TP + FP)
+recall <- TP / (TP + FN)
+specificity <- TN / (TN + FP)
+f1_score <- 2 * (precision * recall) / (precision + recall)
+
+# Print results
+print(paste("Accuracy:", round(accuracy, 3)))
+print(paste("Precision:", round(precision, 3)))
+print(paste("Recall:", round(recall, 3)))
+print(paste("Specificity:", round(specificity, 3)))
+print(paste("F1-score:", round(f1_score, 3)))
 
 ```
+
+
+
+
+
+
+
+
