@@ -148,7 +148,7 @@ cat("The most similar pair is:", word1, "and", word2, "with a similarity score o
 
 
 ```{r 1.1}
-get_top_similar_words <- function(word, similarity_matrix, top_n = 10) {
+get_most_similar <- function(word, similarity_matrix, top_n = 10) {
   row_index <- which(rownames(similarity_matrix) == word)
   similarities <- similarity_matrix[row_index, ]
   sorted_indices <- order(similarities, decreasing = TRUE) 
@@ -157,9 +157,9 @@ get_top_similar_words <- function(word, similarity_matrix, top_n = 10) {
   return(top_words)
 }
 
-get_top_similar_words("film")
-get_top_similar_words("artist")
-get_top_similar_words("book")
+get_most_similar("film", similarity_matrix)
+get_most_similar("artist", similarity_matrix)
+get_most_similar("book", similarity_matrix)
 ```
 
 ```{r 1.2}
@@ -209,8 +209,13 @@ diag(similarity_matrix_reviews) <- NA
 
 rownames(similarity_matrix_reviews) <- rownames(df)
 
-get_top_similar_words(100, similarity_matrix_reviews)
+get_most_similar(100, similarity_matrix_reviews)
 
 df$Review[100]
 df$Review[681]
+```
+
+```{r 2.1}
+df <- df %>% unnest_tokens(bigram, Review_bigram, token = "ngrams", n = 2)
+
 ```
