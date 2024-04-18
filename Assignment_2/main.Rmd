@@ -274,7 +274,7 @@ prediction_df[,Review_Vector := NULL]
 
 
 ```{r 2.1}
-# Spliiting into testing and training
+# Splitting into testing and training
 set.seed(100)
 train_id <- sample(1:nrow(prediction_df), nrow(prediction_df)*0.8)
 df_train <- prediction_df[train_id]
@@ -306,6 +306,7 @@ FN <- confusion_matrix[, 2][[1]]
 print(confusion_matrix)
 
 # Calculate measures
+accuracy_logi <- (TP + TN) / (TP + TN + FP + FN)
 accuracy <- (TP + TN) / (TP + TN + FP + FN)
 precision <- TP / (TP + FP)
 recall <- TP / (TP + FN)
@@ -337,6 +338,9 @@ lasso_1$beta
 # Make prediction on test set
 df_test$lasso_pred <- ifelse(predict(lasso_1, as.matrix(x_test), type = "response") > 0.5, 1,0)
 
+# Used 82 variables
+sum(as.vector(lasso_1$beta) != 0)
+
 # See accuracy
 confusion_matrix <- table(df_test$isPositive, df_test$lasso_pred)
 
@@ -348,6 +352,7 @@ FN <- confusion_matrix[, 2][[1]]
 print(confusion_matrix)
 
 # Calculate measures
+accuracy_lasso <- (TP + TN) / (TP + TN + FP + FN)
 accuracy <- (TP + TN) / (TP + TN + FP + FN)
 precision <- TP / (TP + FP)
 recall <- TP / (TP + FN)
@@ -381,6 +386,7 @@ FN <- confusion_matrix[, 2][[1]]
 print(confusion_matrix)
 
 # Calculate measures
+accuracy_rf <- (TP + TN) / (TP + TN + FP + FN)
 accuracy <- (TP + TN) / (TP + TN + FP + FN)
 precision <- TP / (TP + FP)
 recall <- TP / (TP + FN)
@@ -393,11 +399,98 @@ print(paste("Precision:", round(precision, 3)))
 print(paste("Recall:", round(recall, 3)))
 print(paste("Specificity:", round(specificity, 3)))
 print(paste("F1-score:", round(f1_score, 3)))
+```
+```{r}
+# Calculate the log likelihood of each model
+log_likeli_logistic <- sum(log(1 - predict(logi_1, df_test[df_test$isPositive == FALSE, ], type = "response"))) + sum(log(predict(logi_1, df_test[df_test$isPositive == TRUE, ], type = "response")))
 
-# What are the most important variables for the RF?
-varImpPlot(rf_1)
+log_likeli_lasso <- sum(log(1 - predict(lasso_1, as.matrix(x_test[df_test$isPositive == FALSE, ]), type = "response"))) + sum(log(predict(lasso_1, as.matrix(x_test[df_test$isPositive == TRUE, ]), type = "response")))
+
+log_likeli_rf <- sum(log(1- predict(rf_1, df_test[df_test$isPositive == FALSE, ], type = "response"))) + sum(log(predict(rf_1, df_test[df_test$isPositive == TRUE, ], type = "response")))
+
 ```
 
+
+```{r}
+# What is the performance of the 3 models
+model_results <- data.frame("Model" = c("Logistic Regression", "Lasso", "Random Forest"), "Accuracy" = c(accuracy_logi, accuracy_lasso, accuracy_rf), "Log Likelihood" = c(log_likeli_logistic, log_likeli_lasso, log_likeli_rf))
+
+
+
+```
+
+
+```{r 2.2}
+#####
+# What are the most important variables for the logistic regression
+library(matrixStats)
+library(ggplot2)
+
+# Standardize the coefficients based on how many standard deviations it is away from 0
+stand_coef_log <- data.frame("StdCoef" = abs(coef(logi_1))/sqrt(colVars(model.matrix(y_train ~., data = x_train))))
+stand_coef_log$Variable <- rownames(stand_coef_log)
+stand_coef_log <- stand_coef_log[order(stand_coef_log$StdCoef, decreasing = TRUE),]
+
+# Remove Intercept
+stand_coef_log <- stand_coef_log[-which(rownames(stand_coef_log) == "(Intercept)"),]
+
+# Make it an ordered factor
+stand_coef_log$Variable <- factor(stand_coef_log$Variable, 
+                                   levels = stand_coef_log$Variable[1:20])
+# Plot the 20 most important variables
+ggplot(stand_coef_log[1:20,], aes(Variable,StdCoef)) + 
+  geom_bar(stat = "identity") + coord_flip() + 
+  ylab("Variable importance (standardized coefficients)")
+```
+
+```{r}
+####
+# What are the most important variables for the Lasso regression
+
+# Standardize the coefficients based on how many standard deviations it is away from 0
+stand_coef_lasso <- data.frame(as.matrix(abs(coef(lasso_1))/sqrt(colVars(model.matrix(y_train ~., data = x_train)))))
+colnames(stand_coef_lasso) <- "StdCoef"
+stand_coef_lasso$Variable <- rownames(stand_coef_lasso)
+stand_coef_lasso <- stand_coef_lasso[order(stand_coef_lasso$StdCoef, decreasing = TRUE),]
+
+# Remove Intercept
+stand_coef_lasso <- stand_coef_lasso[-which(rownames(stand_coef_lasso) == "(Intercept)"),]
+
+# Make it an ordered factor
+stand_coef_lasso$Variable <- factor(stand_coef_lasso$Variable, 
+                                   levels = stand_coef_lasso$Variable[1:20])
+# Plot the 20 most important variables
+ggplot(stand_coef_lasso[1:20,], aes(Variable,StdCoef)) + 
+  geom_bar(stat = "identity") + coord_flip() + 
+  ylab("Variable importance (standardized coefficients)")
+
+```
+
+```{r}
+#####
+#What are the most important variables for the RF?
+randomForest::varImpPlot(rf_1, 
+           sort = TRUE,
+           main = "Variable Importance Random Forest",
+           n.var = 20,
+           type = 2)
+      
+```
+
+```{r}
+# What are the coeffcients for each model, to better interpret them and see the differences
+# Only works for logistic and lasso
+
+# Coefficients of the 20 variables with the highest impact of the logistic regression
+data.frame("Coefficients" = coef(logi_1)[-1][order(abs(coef(logi_1)[-1]), decreasing = TRUE)][1:20])
+
+# Coefficients of the 20 variables with the highest impact of the lasso regression
+data.frame("Variable" = rownames(coef(lasso_1))[-1][order(abs(coef(lasso_1)[-1]), decreasing = TRUE)][1:20]
+, "Coefficients" = coef(lasso_1)[-1][order(abs(coef(lasso_1)[-1]), decreasing = TRUE)][1:20])
+
+
+
+`````````
 
 
 
