@@ -321,6 +321,82 @@ print(paste("F1-score:", round(f1_score, 3)))
 
 ```
 
+```{r 2.1}
+# Running a lasso regression
+library(glmnet)
+set.seed(100)
+
+x_train_lasso <- as.matrix(x_train)
+
+lasso_cv <- cv.glmnet(x_train_lasso, y_train, family = "binomial", alpha = 1)
+lasso_1se <- lasso_cv$lambda.1se
+
+lasso_1 <- glmnet(x_train_lasso, y_train, alpha = 1, lambda = lasso_1se, family = "binomial")
+lasso_1$beta
+
+# Make prediction on test set
+df_test$lasso_pred <- ifelse(predict(lasso_1, as.matrix(x_test), type = "response") > 0.5, 1,0)
+
+# See accuracy
+confusion_matrix <- table(df_test$isPositive, df_test$lasso_pred)
+
+TN <- confusion_matrix[[1]]
+TP <- confusion_matrix[, 2][[2]]
+FP <- confusion_matrix[[2]]
+FN <- confusion_matrix[, 2][[1]]
+
+print(confusion_matrix)
+
+# Calculate measures
+accuracy <- (TP + TN) / (TP + TN + FP + FN)
+precision <- TP / (TP + FP)
+recall <- TP / (TP + FN)
+specificity <- TN / (TN + FP)
+f1_score <- 2 * (precision * recall) / (precision + recall)
+
+# Print results
+print(paste("Accuracy:", round(accuracy, 3)))
+print(paste("Precision:", round(precision, 3)))
+print(paste("Recall:", round(recall, 3)))
+print(paste("Specificity:", round(specificity, 3)))
+print(paste("F1-score:", round(f1_score, 3)))
+
+
+```
+```{r 2.1}
+# Random Forest
+library(randomForest)
+
+rf_1 <- randomForest(y = y_train,x = x_train, ntree = 100)
+df_test$rf_pred <- ifelse(predict(rf_1, df_test, type = "response") > 0.5, 1,0)
+
+# See accuracy
+confusion_matrix <- table(df_test$isPositive, df_test$rf_pred)
+
+TN <- confusion_matrix[[1]]
+TP <- confusion_matrix[, 2][[2]]
+FP <- confusion_matrix[[2]]
+FN <- confusion_matrix[, 2][[1]]
+
+print(confusion_matrix)
+
+# Calculate measures
+accuracy <- (TP + TN) / (TP + TN + FP + FN)
+precision <- TP / (TP + FP)
+recall <- TP / (TP + FN)
+specificity <- TN / (TN + FP)
+f1_score <- 2 * (precision * recall) / (precision + recall)
+
+# Print results
+print(paste("Accuracy:", round(accuracy, 3)))
+print(paste("Precision:", round(precision, 3)))
+print(paste("Recall:", round(recall, 3)))
+print(paste("Specificity:", round(specificity, 3)))
+print(paste("F1-score:", round(f1_score, 3)))
+
+# What are the most important variables for the RF?
+varImpPlot(rf_1)
+```
 
 
 
