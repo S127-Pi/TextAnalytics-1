@@ -293,6 +293,7 @@ y_test <- df_test$isPositive
 logi_1 <- glm(y_train ~., data = x_train, family = "binomial")
 
 df_test$pred_logi <- ifelse(predict(logi_1 ,df_test, type = "response") > 0.5, 1,0)
+df_train$pred_logi <- ifelse(predict(logi_1 ,df_train, type = "response") > 0.5, 1,0)
 
 
 
@@ -337,6 +338,8 @@ lasso_1$beta
 
 # Make prediction on test set
 df_test$lasso_pred <- ifelse(predict(lasso_1, as.matrix(x_test), type = "response") > 0.5, 1,0)
+df_train$lasso_pred <- ifelse(predict(lasso_1, as.matrix(x_train), type = "response") > 0.5, 1,0)
+
 
 # Used 82 variables
 sum(as.vector(lasso_1$beta) != 0)
@@ -368,12 +371,51 @@ print(paste("F1-score:", round(f1_score, 3)))
 
 
 ```
+
+```{r 2.1}
+# Running a logistic regression with lasso variables
+# Subset of variables
+var_subset <- rownames(coef(lasso_1))[-1][order(abs(coef(lasso_1)[-1]), decreasing = TRUE)][1:20]
+
+logi_2 <- glm(isPositive ~ sentiment_score + V2 + V17 + `highli recommend` + V23 + V13 + V29 + V12 + V40 + V32 + `not worth` + V7 + V18 + V14 + V45 + `wast time` + `not recommend` + disappoint + wast + V10, data = df_train, family = "binomial")
+
+df_test$pred_logi_2 <- ifelse(predict(logi_2 ,df_test, type = "response") > 0.5, 1,0)
+df_train$pred_logi_2 <- ifelse(predict(logi_2 ,df_train, type = "response") > 0.5, 1,0)
+
+confusion_matrix <- table(df_test$isPositive, df_test$pred_logi_2)
+
+TN <- confusion_matrix[[1]]
+TP <- confusion_matrix[, 2][[2]]
+FP <- confusion_matrix[[2]]
+FN <- confusion_matrix[, 2][[1]]
+
+print(confusion_matrix)
+
+# Calculate measures
+accuracy_logi_2 <- (TP + TN) / (TP + TN + FP + FN)
+accuracy <- (TP + TN) / (TP + TN + FP + FN)
+precision <- TP / (TP + FP)
+recall <- TP / (TP + FN)
+specificity <- TN / (TN + FP)
+f1_score <- 2 * (precision * recall) / (precision + recall)
+
+# Print results
+print(paste("Accuracy:", round(accuracy, 3)))
+print(paste("Precision:", round(precision, 3)))
+print(paste("Recall:", round(recall, 3)))
+print(paste("Specificity:", round(specificity, 3)))
+print(paste("F1-score:", round(f1_score, 3)))
+
+```
+
 ```{r 2.1}
 # Random Forest
 library(randomForest)
 
 rf_1 <- randomForest(y = y_train,x = x_train, ntree = 100)
 df_test$rf_pred <- ifelse(predict(rf_1, df_test, type = "response") > 0.5, 1,0)
+df_train$rf_pred <- ifelse(predict(rf_1, df_train, type = "response") > 0.5, 1,0)
+
 
 # See accuracy
 confusion_matrix <- table(df_test$isPositive, df_test$rf_pred)
@@ -400,11 +442,35 @@ print(paste("Recall:", round(recall, 3)))
 print(paste("Specificity:", round(specificity, 3)))
 print(paste("F1-score:", round(f1_score, 3)))
 ```
+
 ```{r}
-# Calculate the log likelihood of each model
+# Calculate in sample accuracy for each model
+logi_acc_in <- mean(df_train$isPositive == df_train$pred_logi)
+lasso_acc_in <- mean(df_train$isPositive == df_train$lasso_pred)
+logi_subset_acc_in <- mean(df_train$isPositive == df_train$pred_logi_2)
+rf_acc_in <- mean(df_train$isPositive == df_train$rf_pred)
+```
+
+
+```{r}
+# Calculate the in sample log likelihood of each model
+logli_logistic_in <- sum(log(1 - predict(logi_1, df_train[df_train$isPositive == FALSE, ], type = "response"))) + sum(log(predict(logi_1, df_train[df_train$isPositive == TRUE, ], type = "response")))
+
+logli_lasso_in <- sum(log(1 - predict(lasso_1, as.matrix(x_train[df_train$isPositive == FALSE, ]), type = "response"))) + sum(log(predict(lasso_1, as.matrix(x_train[df_train$isPositive == TRUE, ]), type = "response")))
+
+logli_log_subset_in <- sum(log(1 - predict(logi_1, df_train[df_train$isPositive == FALSE, ], type = "response"))) + sum(log(predict(logi_1, df_train[df_train$isPositive == TRUE, ], type = "response")))
+
+logli_rf_in <- sum(log(1- predict(rf_1, df_train[df_train$isPositive == FALSE, ], type = "response"))) + sum(log(predict(rf_1, df_train[df_train$isPositive == TRUE, ], type = "response")))
+
+```
+
+```{r}
+# Calculate the out of sample log likelihood of each model
 log_likeli_logistic <- sum(log(1 - predict(logi_1, df_test[df_test$isPositive == FALSE, ], type = "response"))) + sum(log(predict(logi_1, df_test[df_test$isPositive == TRUE, ], type = "response")))
 
 log_likeli_lasso <- sum(log(1 - predict(lasso_1, as.matrix(x_test[df_test$isPositive == FALSE, ]), type = "response"))) + sum(log(predict(lasso_1, as.matrix(x_test[df_test$isPositive == TRUE, ]), type = "response")))
+
+log_likeli_logistic_subset <- sum(log(1 - predict(logi_2, df_test[df_test$isPositive == FALSE, ], type = "response"))) + sum(log(predict(logi_2, df_test[df_test$isPositive == TRUE, ], type = "response")))
 
 log_likeli_rf <- sum(log(1- predict(rf_1, df_test[df_test$isPositive == FALSE, ], type = "response"))) + sum(log(predict(rf_1, df_test[df_test$isPositive == TRUE, ], type = "response")))
 
@@ -413,10 +479,17 @@ log_likeli_rf <- sum(log(1- predict(rf_1, df_test[df_test$isPositive == FALSE, ]
 
 ```{r}
 # What is the performance of the 3 models
-model_results <- data.frame("Model" = c("Logistic Regression", "Lasso", "Random Forest"), "Accuracy" = c(accuracy_logi, accuracy_lasso, accuracy_rf), "Log Likelihood" = c(log_likeli_logistic, log_likeli_lasso, log_likeli_rf))
+model_results <- data.frame("Model" = c("Logistic Regression", "Lasso", "Logistic Subset" ,"Random Forest"),
+                            "In Sample Accuracy" = 
+                              c(logi_acc_in, lasso_acc_in, logi_subset_acc_in, rf_acc_in),
+                            "In Sample Log Likelihood" = 
+                              c(logli_logistic_in, logli_lasso_in, logli_log_subset_in, logli_rf_in), 
+                            "Out of Sample Accuracy" = 
+                              c(accuracy_logi, accuracy_lasso, accuracy_logi_2 ,accuracy_rf), 
+                            "Out of Sample Log Likelihood" = 
+                              c(log_likeli_logistic, log_likeli_lasso, log_likeli_logistic_subset ,log_likeli_rf))
 
-
-
+model_results
 ```
 
 
@@ -440,7 +513,8 @@ stand_coef_log$Variable <- factor(stand_coef_log$Variable,
 # Plot the 20 most important variables
 ggplot(stand_coef_log[1:20,], aes(Variable,StdCoef)) + 
   geom_bar(stat = "identity") + coord_flip() + 
-  ylab("Variable importance (standardized coefficients)")
+  ylab("Variable importance (standardized coefficients)") +
+  ggtitle("Variable Imporatance Logistic Regression")
 ```
 
 ```{r}
@@ -462,8 +536,30 @@ stand_coef_lasso$Variable <- factor(stand_coef_lasso$Variable,
 # Plot the 20 most important variables
 ggplot(stand_coef_lasso[1:20,], aes(Variable,StdCoef)) + 
   geom_bar(stat = "identity") + coord_flip() + 
-  ylab("Variable importance (standardized coefficients)")
+  ylab("Variable importance (standardized coefficients)") +
+  ggtitle("Variable Importance Lasso ")
 
+```
+```{r 2.2}
+#####
+# What are the most important variables for the logistic regression with the lasso subset
+
+# Standardize the coefficients based on how many standard deviations it is away from 0
+stand_coef_log_subset <- data.frame("StdCoef" = abs(coef(logi_2))/sqrt(colVars(model.matrix(y_train ~., data = x_train))))
+stand_coef_log_subset$Variable <- rownames(stand_coef_log_subset)
+stand_coef_log_subset <- stand_coef_log_subset[order(stand_coef_log_subset$StdCoef, decreasing = TRUE),]
+
+# Remove Intercept
+stand_coef_log_subset <- stand_coef_log_subset[-which(rownames(stand_coef_log_subset) == "(Intercept)"),]
+
+# Make it an ordered factor
+stand_coef_log_subset$Variable <- factor(stand_coef_log_subset$Variable, 
+                                   levels = stand_coef_log_subset$Variable[1:20])
+# Plot the 20 most important variables
+ggplot(stand_coef_log_subset[1:20,], aes(Variable,StdCoef)) + 
+  geom_bar(stat = "identity") + coord_flip() + 
+  ylab("Variable importance (standardized coefficients)") +
+  ggtitle("Variable Importance Logistic Subset")
 ```
 
 ```{r}
@@ -488,7 +584,8 @@ data.frame("Coefficients" = coef(logi_1)[-1][order(abs(coef(logi_1)[-1]), decrea
 data.frame("Variable" = rownames(coef(lasso_1))[-1][order(abs(coef(lasso_1)[-1]), decreasing = TRUE)][1:20]
 , "Coefficients" = coef(lasso_1)[-1][order(abs(coef(lasso_1)[-1]), decreasing = TRUE)][1:20])
 
-
+# Coefficients of the 20 variables with the highest impact of the logistic regression with the lasso subset
+data.frame("Coefficients" = coef(logi_2)[-1][order(abs(coef(logi_2)[-1]), decreasing = TRUE)][1:20])
 
 `````````
 
