@@ -1,6 +1,6 @@
 ---
 title: "Assignment 2"
-author: "Kevin Kraayeveld (589908)"
+author: "Kevin Kraayeveld (589908), Thomas Groenewegen (565346), Scottie Lee (589821), Pi Molling (607367)"
 date: "2024-04-10"
 output: pdf_document
 ---
