@@ -408,7 +408,7 @@ print(paste("F1-score:", round(f1_score, 3)))
 
 ```
 
-```{r 2.1}
+```{r 2.1, warning=FALSE, message=FALSE}
 # Random Forest
 library(randomForest)
 
