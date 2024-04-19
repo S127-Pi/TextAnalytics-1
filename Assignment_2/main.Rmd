@@ -21,7 +21,7 @@ library(sentimentr)
 ```
 
 ```{r data_reading, include = FALSE}
-df <- fread("AmazonReviews.csv")
+df <- fread("../data/AmazonReviews.csv")
 df <- df[, isPositive, Review]
 ```
 
@@ -167,7 +167,7 @@ get_top_similar_words("book", similarity_matrix)
 ```
 
 ```{r 1.2}
-dimension <- 3
+dimension <- 41
 model[which(abs(model[,dimension]) == max(abs(model[,dimension]))),dimension]
 {
 chosen_dimension <- rep(0,50)
@@ -540,6 +540,7 @@ ggplot(stand_coef_lasso[1:20,], aes(Variable,StdCoef)) +
   ggtitle("Variable Importance Lasso ")
 
 ```
+
 ```{r 2.2}
 #####
 # What are the most important variables for the logistic regression with the lasso subset
